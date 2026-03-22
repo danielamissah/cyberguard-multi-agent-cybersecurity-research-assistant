@@ -1,0 +1,70 @@
+project:
+  name: cyberguard-agent
+  version: "1.0.0"
+  description: >
+    Multi-agent cybersecurity research assistant powered by LangGraph.
+    5 specialised agents — Supervisor, RAG, WebSearch, CodeAnalysis, Critic —
+    collaborating to answer complex cybersecurity questions with
+    retrieval-augmented generation and live threat intelligence.
+
+llm:
+  provider: "huggingface"
+  model: "mistralai/Mistral-7B-Instruct-v0.3"
+  max_tokens: 1024
+  temperature: 0.1
+
+knowledge_base:
+  source: "arxiv"
+  queries:
+    - "adversarial machine learning cybersecurity"
+    - "ransomware detection machine learning"
+    - "network intrusion detection deep learning"
+    - "data poisoning attacks neural networks"
+    - "federated learning security privacy"
+    - "malware classification neural network"
+    - "phishing detection natural language processing"
+    - "anomaly detection cybersecurity"
+    - "cyber threat intelligence machine learning"
+    - "LLM security vulnerabilities prompt injection"
+  max_papers: 1000
+  chunk_size: 512
+  chunk_overlap: 64
+
+vector_store:
+  provider: "chromadb"
+  collection: "cyberguard_knowledge"
+  persist_dir: "./data/chroma"
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  top_k: 5
+
+agents:
+  supervisor:
+    name: "Supervisor"
+    description: "Routes queries to appropriate agents and synthesises final response"
+    max_iterations: 3
+  rag:
+    name: "RAG Agent"
+    description: "Retrieves relevant cybersecurity research papers"
+    top_k: 5
+  web_search:
+    name: "Web Search Agent"
+    description: "Searches live threat intelligence and recent CVEs"
+    max_results: 5
+  code_analysis:
+    name: "Code Analysis Agent"
+    description: "Analyses malware patterns and exploit code"
+  critic:
+    name: "Critic Agent"
+    description: "Evaluates response quality and triggers retry if needed"
+    quality_threshold: 0.7
+
+mlflow:
+  tracking_uri: "http://localhost:5003"
+  experiment: "cyberguard-agent"
+
+api:
+  host: "0.0.0.0"
+  port: 8001
+
+tavily:
+  max_results: 5

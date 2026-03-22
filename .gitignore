@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+data/chroma/
+mlflow.db
+*.egg-info/
+.pytest_cache/
+outputs/
+*.pkl
+.DS_Storedata/
