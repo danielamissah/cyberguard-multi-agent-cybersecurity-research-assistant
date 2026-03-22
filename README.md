@@ -2,6 +2,8 @@
 
 A production-grade 5-agent LangGraph system for cybersecurity research — combining RAG over 818 indexed research papers, live threat intelligence, malware pattern analysis, and AI-powered quality evaluation.
 
+Live Demo → [huggingface.co/spaces/dkamissah/cyberguard-agent](https://huggingface.co/spaces/dkamissah/cyberguard-agent)
+
 ## Agent Architecture
 
 ```

@@ -23,6 +23,40 @@ st.set_page_config(
 API_URL = os.environ.get("API_URL", "http://localhost:8001")
 HF_SPACE = os.environ.get("SPACE_ID", "") != ""  # True when running on HF Spaces
 
+# On HF Spaces, call agent graph directly instead of via API
+if HF_SPACE:
+    import sys
+    sys.path.insert(0, ".")
+    try:
+        from src.graph.agent_graph import run_query, load_config
+        from src.tools.knowledge_base import build_knowledge_base, load_config as load_kb_config
+        import chromadb
+        from pathlib import Path
+
+        _config = load_config()
+
+        # Build KB on first run if needed
+        @st.cache_resource(show_spinner="Building knowledge base from arXiv papers (~3 min on first run)...")
+        def get_kb():
+            cfg = load_kb_config()
+            build_knowledge_base(cfg, force_rebuild=False)
+            return True
+
+        def direct_query(query: str) -> dict:
+            get_kb()
+            import time
+            start = time.time()
+            result = run_query(query, _config)
+            result["latency_ms"] = round((time.time() - start) * 1000, 2)
+            return result
+
+        DIRECT_MODE = True
+    except Exception as e:
+        DIRECT_MODE = False
+        st.sidebar.warning(f"Direct mode failed: {e}")
+else:
+    DIRECT_MODE = False
+
 AGENT_COLORS = {
     "supervisor":    "#3498DB",
     "rag":           "#2ECC71",
@@ -57,30 +91,34 @@ def api_post(endpoint: str, payload: dict, timeout: int = 300) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────
+# ── Sidebar 
 with st.sidebar:
-    st.title("🛡️ CyberGuard")
+    st.title("CyberGuard")
     st.caption("Multi-Agent Cybersecurity Research Assistant")
     st.divider()
 
-    stats = api_get("/stats")
-    if "error" not in stats:
+    stats = api_get("/stats") if not DIRECT_MODE else {}
+    if "error" not in stats and stats:
         st.metric("Knowledge Base", f"{stats.get('knowledge_base_chunks', 0):,} chunks")
         st.metric("Active Agents", stats.get("agents", 5))
         st.metric("LLM Model", "Mistral-7B")
+    elif DIRECT_MODE:
+        st.metric("Active Agents", 5)
+        st.metric("LLM Model", "LLaMA 3.1-8B")
+        st.metric("Mode", "Direct (HF Spaces)")
     else:
         st.warning("API offline — start with `make api`")
 
     st.divider()
     st.caption("**Agent Pipeline**")
-    agents = ["🎯 Supervisor", "📚 RAG", "🌐 Web Search",
-              "🔬 Code Analysis", "✍️ Synthesiser", "⚖️ Critic"]
+    agents = ["Supervisor", "RAG", "Web Search",
+              "Code Analysis", "Synthesiser", "Critic"]
     for agent in agents:
         st.caption(f"  {agent}")
 
     st.divider()
     st.caption("**Stack:** LangGraph · LangChain · ChromaDB · Mistral-7B · Tavily · FastAPI · MLflow")
-    st.caption("**GitHub:** [cyberguard-agent](https://github.com/dkamissah/cyberguard-agent)")
+    st.caption("**GitHub:** [cyberguard-agent](https://github.com/danielamissah/cyberguard-multi-agent-cybersecurity-research-assistant)")
 
 
 # ── Main tabs ─────────────────────────────────────────────────────────────────
@@ -89,7 +127,7 @@ tab1, tab2, tab3 = st.tabs(["Research Assistant", "Agent Trace", "System Info"])
 
 # ── TAB 1: Research Assistant ─────────────────────────────────────────────────
 with tab1:
-    st.title("🛡️ CyberGuard Research Assistant")
+    st.title("CyberGuard Research Assistant")
     st.caption("5-agent LangGraph system — RAG + Live Threat Intelligence + Code Analysis")
 
     # Session state for result and query
@@ -103,7 +141,7 @@ with tab1:
         result = st.session_state.cg_result
 
         # Process new query button
-        if st.button("🔄 Process New Query", type="primary"):
+        if st.button("Process New Query", type="primary"):
             st.session_state.cg_result = None
             st.session_state.cg_query = ""
             st.rerun()
@@ -199,9 +237,15 @@ with tab1:
             done_flag = threading.Event()
 
             def fetch_result():
-                result_holder["data"] = api_post(
-                    "/query", {"query": query, "track": False}, timeout=300
-                )
+                if DIRECT_MODE:
+                    try:
+                        result_holder["data"] = direct_query(query)
+                    except Exception as e:
+                        result_holder["data"] = {"error": str(e)}
+                else:
+                    result_holder["data"] = api_post(
+                        "/query", {"query": query, "track": False}, timeout=300
+                    )
                 done_flag.set()
 
             thread = threading.Thread(target=fetch_result)

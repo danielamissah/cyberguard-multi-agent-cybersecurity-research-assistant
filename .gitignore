@@ -9,3 +9,4 @@ mlflow.db
 outputs/
 *.pkl
 .DS_Storedata/
+data/
