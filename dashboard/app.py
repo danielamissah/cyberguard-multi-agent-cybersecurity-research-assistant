@@ -91,9 +91,9 @@ def api_post(endpoint: str, payload: dict, timeout: int = 300) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
-# ── Sidebar 
+# ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("CyberGuard")
+    st.title("🛡️ CyberGuard")
     st.caption("Multi-Agent Cybersecurity Research Assistant")
     st.divider()
 
@@ -111,8 +111,8 @@ with st.sidebar:
 
     st.divider()
     st.caption("**Agent Pipeline**")
-    agents = ["Supervisor", "RAG", "Web Search",
-              "Code Analysis", "Synthesiser", "Critic"]
+    agents = ["🎯 Supervisor", "📚 RAG", "🌐 Web Search",
+              "🔬 Code Analysis", "✍️ Synthesiser", "⚖️ Critic"]
     for agent in agents:
         st.caption(f"  {agent}")
 
@@ -127,7 +127,7 @@ tab1, tab2, tab3 = st.tabs(["Research Assistant", "Agent Trace", "System Info"])
 
 # ── TAB 1: Research Assistant ─────────────────────────────────────────────────
 with tab1:
-    st.title("CyberGuard Research Assistant")
+    st.title("🛡️ CyberGuard Research Assistant")
     st.caption("5-agent LangGraph system — RAG + Live Threat Intelligence + Code Analysis")
 
     # Session state for result and query
@@ -141,7 +141,7 @@ with tab1:
         result = st.session_state.cg_result
 
         # Process new query button
-        if st.button("Process New Query", type="primary"):
+        if st.button("🔄 Process New Query", type="primary"):
             st.session_state.cg_result = None
             st.session_state.cg_query = ""
             st.rerun()
@@ -205,32 +205,38 @@ with tab1:
         run = st.button("🔍 Analyse", type="primary", use_container_width=True)
 
         if run and query.strip():
-            # ── Agent progress bars ───────────────────────────────────────────
-            st.markdown("**Running 5-agent pipeline...**")
+            # ── Replace entire page content with progress UI ──────────────────
+            # This hides the form and shows progress at the top immediately
+            st.session_state.cg_query = query
 
             agents_pipeline = [
-                ("🎯 Supervisor",     "supervisor",    "Routing query to agents"),
-                ("📚 RAG Agent",      "rag",           "Retrieving research papers"),
-                ("🌐 Web Search",     "web_search",    "Searching threat intelligence"),
-                ("🔬 Code Analyst",   "code_analysis", "Analysing malware patterns"),
-                ("⚖️ Critic",         "critic",        "Evaluating response quality"),
+                ("🎯 Supervisor",   "supervisor",    "Routing query to agents"),
+                ("📚 RAG Agent",    "rag",           "Retrieving research papers"),
+                ("🌐 Web Search",   "web_search",    "Searching threat intelligence"),
+                ("🔬 Code Analyst", "code_analysis", "Analysing malware patterns"),
+                ("⚖️ Critic",       "critic",        "Evaluating response quality"),
             ]
 
-            progress_bars = []
-            status_texts  = []
+            # Show a full-page status that replaces everything above
+            status_box = st.container()
+            with status_box:
+                st.info(f"🔍 Analysing: *{query[:80]}{'...' if len(query) > 80 else ''}*")
+                st.markdown("---")
+                st.markdown("**Running 5-agent pipeline:**")
 
-            for name, key, desc in agents_pipeline:
-                color = AGENT_COLORS.get(key, "#888")
-                st.markdown(
-                    f'<span style="color:{color}">●</span> **{name}** — {desc}',
-                    unsafe_allow_html=True
-                )
-                pb = st.progress(0)
-                st.caption(f"  ⏳ Waiting...")
-                progress_bars.append(pb)
-                status_texts.append(st.empty())
+                bars = {}
+                for name, key, desc in agents_pipeline:
+                    color = AGENT_COLORS.get(key, "#888")
+                    st.markdown(
+                        f'<span style="color:{color}">●</span> **{name}** — {desc}',
+                        unsafe_allow_html=True
+                    )
+                    bars[key] = st.progress(0)
 
-            # Animate progress while waiting for API
+                st.markdown("---")
+                eta_text = st.empty()
+                eta_text.caption("⏳ Estimated time: ~15 seconds")
+
             import threading, time as _time
 
             result_holder = {}
@@ -251,21 +257,29 @@ with tab1:
             thread = threading.Thread(target=fetch_result)
             thread.start()
 
-            # Simulate per-agent progress
-            agent_times = [0.5, 2.0, 3.5, 5.0, 6.5]
-            completed   = [False] * 5
+            # Animate progress bars while waiting
+            agent_keys  = [k for _, k, _ in agents_pipeline]
+            start_time  = _time.time()
+            fill_times  = [1, 3, 5, 7, 9]  # seconds when each bar hits ~80%
 
             while not done_flag.is_set():
-                elapsed = _time.time()
-                for i, t in enumerate(agent_times):
-                    if not completed[i]:
-                        frac = min(1.0, (elapsed % 10) / t) if t > 0 else 1.0
-                        progress_bars[i].progress(min(int(frac * 80), 80))
-                _time.sleep(0.3)
+                elapsed = _time.time() - start_time
+                for i, key in enumerate(agent_keys):
+                    t = fill_times[i]
+                    if elapsed >= t:
+                        bars[key].progress(85)
+                    elif elapsed >= t * 0.3:
+                        pct = int(((elapsed - t * 0.3) / (t * 0.7)) * 85)
+                        bars[key].progress(min(pct, 84))
+                remaining = max(0, 15 - int(elapsed))
+                eta_text.caption(f"⏳ Estimated time remaining: ~{remaining}s")
+                _time.sleep(0.4)
 
-            # Mark all complete
-            for i, pb in enumerate(progress_bars):
-                pb.progress(100)
+            # All done — fill bars to 100%
+            for key in agent_keys:
+                bars[key].progress(100)
+            eta_text.caption("✅ Analysis complete!")
+            _time.sleep(0.5)
 
             thread.join()
             result = result_holder.get("data", {})
@@ -274,7 +288,6 @@ with tab1:
                 st.error(f"Error: {result['error']}")
             else:
                 st.session_state.cg_result = result
-                st.session_state.cg_query  = query
                 st.rerun()
 
         elif run:
