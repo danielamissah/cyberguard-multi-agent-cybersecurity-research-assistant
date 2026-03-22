@@ -130,37 +130,31 @@ with tab1:
     st.title("🛡️ CyberGuard Research Assistant")
     st.caption("5-agent LangGraph system — RAG + Live Threat Intelligence + Code Analysis")
 
-    # Session state for result and query
-    if "cg_result" not in st.session_state:
-        st.session_state.cg_result = None
-    if "cg_query" not in st.session_state:
-        st.session_state.cg_query = ""
+    # Session state
+    if "cg_result"     not in st.session_state: st.session_state.cg_result     = None
+    if "cg_query"      not in st.session_state: st.session_state.cg_query      = ""
+    if "cg_processing" not in st.session_state: st.session_state.cg_processing = False
 
-    # ── Show result or input form ─────────────────────────────────────────────
+    # ── RESULTS VIEW ──────────────────────────────────────────────────────────
     if st.session_state.cg_result is not None:
         result = st.session_state.cg_result
-
-        # Process new query button
         if st.button("🔄 Process New Query", type="primary"):
-            st.session_state.cg_result = None
-            st.session_state.cg_query = ""
+            st.session_state.cg_result     = None
+            st.session_state.cg_query      = ""
+            st.session_state.cg_processing = False
             st.rerun()
 
         st.divider()
-
-        # Metrics
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Quality Score",  f"{result['quality_score']:.0%}")
-        m2.metric("RAG Sources",    result["n_rag_results"])
-        m3.metric("Web Sources",    result["n_web_results"])
-        m4.metric("Latency",        f"{result['latency_ms']:.0f}ms")
-
+        m1.metric("Quality Score", f"{result['quality_score']:.0%}")
+        m2.metric("RAG Sources",   result["n_rag_results"])
+        m3.metric("Web Sources",   result["n_web_results"])
+        m4.metric("Latency",       f"{result['latency_ms']:.0f}ms")
         st.divider()
         st.subheader("Research Findings")
         st.markdown(result["response"])
         st.divider()
 
-        # Sources
         if result.get("sources"):
             st.subheader("Sources")
             papers = [s for s in result["sources"] if s["type"] == "paper"]
@@ -174,7 +168,6 @@ with tab1:
                 for s in web[:5]:
                     st.markdown(f"- [{s['title']}]({s['url']})")
 
-        # Agent trace
         if result.get("agent_trace"):
             with st.expander("Agent execution trace"):
                 for step in result["agent_trace"]:
@@ -186,8 +179,87 @@ with tab1:
                         unsafe_allow_html=True
                     )
 
+    # ── PROCESSING VIEW ───────────────────────────────────────────────────────
+    elif st.session_state.cg_processing:
+        query = st.session_state.cg_query
+        st.info(f"🔍 Analysing: *{query[:80]}{'...' if len(query) > 80 else ''}*")
+        st.divider()
+        st.markdown("**Running 5-agent pipeline:**")
+
+        agents_pipeline = [
+            ("🎯 Supervisor",   "supervisor",    "Routing query to agents"),
+            ("📚 RAG Agent",    "rag",           "Retrieving research papers"),
+            ("🌐 Web Search",   "web_search",    "Searching threat intelligence"),
+            ("🔬 Code Analyst", "code_analysis", "Analysing malware patterns"),
+            ("⚖️ Critic",       "critic",        "Evaluating response quality"),
+        ]
+
+        bars = {}
+        for name, key, desc in agents_pipeline:
+            color = AGENT_COLORS.get(key, "#888")
+            st.markdown(
+                f'<span style="color:{color}">●</span> **{name}** — {desc}',
+                unsafe_allow_html=True
+            )
+            bars[key] = st.progress(0)
+
+        st.divider()
+        eta_text = st.empty()
+
+        import threading, time as _time
+
+        result_holder = {}
+        done_flag = threading.Event()
+
+        def fetch_result():
+            if DIRECT_MODE:
+                try:
+                    result_holder["data"] = direct_query(query)
+                except Exception as e:
+                    result_holder["data"] = {"error": str(e)}
+            else:
+                result_holder["data"] = api_post(
+                    "/query", {"query": query, "track": False}, timeout=300
+                )
+            done_flag.set()
+
+        thread = threading.Thread(target=fetch_result)
+        thread.start()
+
+        agent_keys = [k for _, k, _ in agents_pipeline]
+        fill_times = [1, 3, 5, 7, 9]
+        start_time = _time.time()
+
+        while not done_flag.is_set():
+            elapsed = _time.time() - start_time
+            for i, key in enumerate(agent_keys):
+                t = fill_times[i]
+                if elapsed >= t:
+                    bars[key].progress(85)
+                elif elapsed >= t * 0.3:
+                    pct = int(((elapsed - t * 0.3) / (t * 0.7)) * 85)
+                    bars[key].progress(min(pct, 84))
+            remaining = max(0, 15 - int(elapsed))
+            eta_text.caption(f"⏳ Estimated time remaining: ~{remaining}s")
+            _time.sleep(0.4)
+
+        for key in agent_keys:
+            bars[key].progress(100)
+        eta_text.caption("✅ Analysis complete!")
+        _time.sleep(0.5)
+        thread.join()
+
+        result = result_holder.get("data", {})
+        st.session_state.cg_processing = False
+        if "error" in result:
+            st.session_state.cg_result = None
+            st.error(f"Error: {result['error']}")
+        else:
+            st.session_state.cg_result = result
+            st.rerun()
+
+    # ── INPUT VIEW ────────────────────────────────────────────────────────────
     else:
-        # ── Input form ────────────────────────────────────────────────────────
         query = st.text_area(
             "Enter your cybersecurity research question:",
             value=st.session_state.cg_query,
@@ -205,91 +277,9 @@ with tab1:
         run = st.button("🔍 Analyse", type="primary", use_container_width=True)
 
         if run and query.strip():
-            # ── Replace entire page content with progress UI ──────────────────
-            # This hides the form and shows progress at the top immediately
-            st.session_state.cg_query = query
-
-            agents_pipeline = [
-                ("🎯 Supervisor",   "supervisor",    "Routing query to agents"),
-                ("📚 RAG Agent",    "rag",           "Retrieving research papers"),
-                ("🌐 Web Search",   "web_search",    "Searching threat intelligence"),
-                ("🔬 Code Analyst", "code_analysis", "Analysing malware patterns"),
-                ("⚖️ Critic",       "critic",        "Evaluating response quality"),
-            ]
-
-            # Show a full-page status that replaces everything above
-            status_box = st.container()
-            with status_box:
-                st.info(f"🔍 Analysing: *{query[:80]}{'...' if len(query) > 80 else ''}*")
-                st.markdown("---")
-                st.markdown("**Running 5-agent pipeline:**")
-
-                bars = {}
-                for name, key, desc in agents_pipeline:
-                    color = AGENT_COLORS.get(key, "#888")
-                    st.markdown(
-                        f'<span style="color:{color}">●</span> **{name}** — {desc}',
-                        unsafe_allow_html=True
-                    )
-                    bars[key] = st.progress(0)
-
-                st.markdown("---")
-                eta_text = st.empty()
-                eta_text.caption("⏳ Estimated time: ~15 seconds")
-
-            import threading, time as _time
-
-            result_holder = {}
-            done_flag = threading.Event()
-
-            def fetch_result():
-                if DIRECT_MODE:
-                    try:
-                        result_holder["data"] = direct_query(query)
-                    except Exception as e:
-                        result_holder["data"] = {"error": str(e)}
-                else:
-                    result_holder["data"] = api_post(
-                        "/query", {"query": query, "track": False}, timeout=300
-                    )
-                done_flag.set()
-
-            thread = threading.Thread(target=fetch_result)
-            thread.start()
-
-            # Animate progress bars while waiting
-            agent_keys  = [k for _, k, _ in agents_pipeline]
-            start_time  = _time.time()
-            fill_times  = [1, 3, 5, 7, 9]  # seconds when each bar hits ~80%
-
-            while not done_flag.is_set():
-                elapsed = _time.time() - start_time
-                for i, key in enumerate(agent_keys):
-                    t = fill_times[i]
-                    if elapsed >= t:
-                        bars[key].progress(85)
-                    elif elapsed >= t * 0.3:
-                        pct = int(((elapsed - t * 0.3) / (t * 0.7)) * 85)
-                        bars[key].progress(min(pct, 84))
-                remaining = max(0, 15 - int(elapsed))
-                eta_text.caption(f"⏳ Estimated time remaining: ~{remaining}s")
-                _time.sleep(0.4)
-
-            # All done — fill bars to 100%
-            for key in agent_keys:
-                bars[key].progress(100)
-            eta_text.caption("✅ Analysis complete!")
-            _time.sleep(0.5)
-
-            thread.join()
-            result = result_holder.get("data", {})
-
-            if "error" in result:
-                st.error(f"Error: {result['error']}")
-            else:
-                st.session_state.cg_result = result
-                st.rerun()
-
+            st.session_state.cg_query      = query
+            st.session_state.cg_processing = True
+            st.rerun()
         elif run:
             st.warning("Please enter a query first.")
 
