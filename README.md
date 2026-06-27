@@ -26,13 +26,13 @@ A production-grade 5-agent LangGraph system for cybersecurity research — combi
 User Query
     │
     ▼
-🎯 Supervisor Agent     — routes query, orchestrates pipeline
+Supervisor Agent     — routes query, orchestrates pipeline
     │
-    ├──► 📚 RAG Agent       — ChromaDB retrieval (818 cybersecurity papers)
-    ├──► 🌐 Web Search       — live threat intelligence via Tavily API
-    ├──► 🔬 Code Analyst     — MITRE ATT&CK mapping, malware pattern analysis
-    ├──► ✍️ Synthesiser      — structured response with executive summary
-    └──► ⚖️ Critic Agent     — quality score 0–1, retries if below 0.7 (max 3x)
+    ├──► RAG Agent       — ChromaDB retrieval (818 cybersecurity papers)
+    ├──► Web Search       — live threat intelligence via Tavily API
+    ├──► Code Analyst     — MITRE ATT&CK mapping, malware pattern analysis
+    ├──► Synthesiser      — structured response with executive summary
+    └──► Critic Agent     — quality score 0–1, retries if below 0.7 (max 3x)
 ```
 
 ### LangGraph State Machine
